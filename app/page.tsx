@@ -4,25 +4,28 @@ import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Phone, Calendar, ClipboardList, CheckCircle, BarChart, Clock, Zap, ShieldCheck, ArrowRight } from 'lucide-react';
 
-// NOTE: Replace these with your actual Supabase details later in Vercel settings
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Safe placeholder so Vercel builds cleanly even without variables set yet
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder-project.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function EightAMApp() {
   const [view, setView] = useState('landing');
   const [appointments, setAppointments] = useState([
-    // Sample data so the dashboard looks "full" for your first users
     { id: 1, patient_name: "James Wilson", created_at: new Date().toISOString(), urgency: "Amber", symptoms: "Persistent cough (3 days)", status: "Booked" },
     { id: 2, patient_name: "Mary Thompson", created_at: new Date().toISOString(), urgency: "Red", symptoms: "Acute chest discomfort", status: "Triage Required" },
   ]);
 
-  // Fetch real data from Supabase when in dashboard view
   useEffect(() => {
-    if (view === 'dashboard' && supabaseUrl) {
+    // Only fetch if real keys are provided in Vercel settings
+    if (view === 'dashboard' && process.env.NEXT_PUBLIC_SUPABASE_URL) {
       const fetchApps = async () => {
-        const { data } = await supabase.from('appointments').select('*').order('created_at', { ascending: false });
-        if (data && data.length > 0) setAppointments(data);
+        try {
+          const { data } = await supabase.from('appointments').select('*').order('created_at', { ascending: false });
+          if (data && data.length > 0) setAppointments(data);
+        } catch (error) {
+          console.log("Using mock data instead");
+        }
       };
       fetchApps();
     }
