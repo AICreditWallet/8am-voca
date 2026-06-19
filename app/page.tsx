@@ -1,197 +1,190 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Phone, Calendar, ClipboardList, CheckCircle, BarChart, Clock, Zap, ShieldCheck, ArrowRight, Play, Star, Mail, Lock } from 'lucide-react';
+import Vapi from '@vapi-ai/web';
+import { Phone, Calendar, ClipboardList, CheckCircle, BarChart, Clock, Zap, ShieldCheck, ArrowRight, Play, Star, Mail, X, Loader2 } from 'lucide-react';
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
+// Initialize Vapi Web Client
+const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY || '');
+
 export default function EightAMApp() {
-  const [view, setView] = useState('landing'); // 'landing', 'login', 'dashboard'
+  const [view, setView] = useState('landing'); 
+  const [isCalling, setIsCalling] = useState(false);
+  const [showExitPopup, setShowExitPopup] = useState(false);
   const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [demoPhone, setDemoPhone] = useState('');
-  const [calling, setCalling] = useState(false);
-  const [appointments, setAppointments] = useState([
-    { id: 1, patient_name: "James Wilson", created_at: new Date().toISOString(), urgency: "Amber", symptoms: "Persistent cough (3 days)", status: "Booked" },
-    { id: 2, patient_name: "Mary Thompson", created_at: new Date().toISOString(), urgency: "Red", symptoms: "Acute chest discomfort", status: "Triage Required" },
-  ]);
+  const [appointments, setAppointments] = useState([]);
+  const [activeCallId, setActiveCallId] = useState(null);
 
+  // 1. Listen for Real-Time Updates from Supabase
   useEffect(() => {
-    if (view === 'dashboard' && process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      const fetchApps = async () => {
-        try {
-          const { data } = await supabase.from('appointments').select('*').order('created_at', { ascending: false });
-          if (data && data.length > 0) setAppointments(data);
-        } catch (error) { console.log("Using mock data"); }
-      };
-      fetchApps();
-    }
-  }, [view]);
+    const channel = supabase
+      .channel('realtime_appointments')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'appointments' }, (payload) => {
+        setAppointments(prev => [payload.new, ...prev]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'appointments' }, (payload) => {
+        setAppointments(prev => prev.map(a => a.id === payload.new.id ? payload.new : a));
+      })
+      .subscribe();
 
-  const handleLogin = async (e: any) => {
-    e.preventDefault();
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email });
-    if (error) {
-      alert(error.message);
-    } else {
-      alert("Check your email for the magic link!");
-      setView('dashboard');
-    }
-    setLoading(false);
-  };
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
-  const handleCallMe = async () => {
-    if (!demoPhone) return alert("Please enter a phone number");
-    setCalling(true);
+  // 2. Handle Web Call (Sarah starts talking in browser)
+  const startWebCall = async () => {
+    setIsCalling(true);
+    setAppointments([]); // Clear table for fresh demo
     try {
-      const response = await fetch('/api/call-demo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: demoPhone }),
-      });
-      if (response.ok) {
-        alert("Calling your phone now! Answer to speak with Sarah.");
-      } else {
-        alert("Error starting call. Check Vercel logs.");
-      }
-    } catch (error) { console.error(error); }
-    setCalling(false);
+      await vapi.start(process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID);
+    } catch (e) {
+      console.error(e);
+      setIsCalling(false);
+    }
   };
+
+  vapi.on('call-start', () => {
+    console.log('Call started');
+  });
+
+  vapi.on('call-end', () => {
+    setIsCalling(false);
+    setShowExitPopup(true);
+  });
 
   const LandingPage = () => (
-    <div className="min-h-screen bg-white text-[#1A1C1E] font-sans selection:bg-blue-100">
+    <div className="min-h-screen bg-white text-[#1A1C1E] font-sans">
       <nav className="max-w-7xl mx-auto px-8 py-10 flex justify-between items-center">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setView('landing')}>
+        <div className="flex items-center gap-3">
           <div className="bg-[#0052FF] p-2.5 rounded-[14px] shadow-lg shadow-blue-100">
             <Phone className="text-white w-6 h-6" />
           </div>
-          <span className="text-2xl font-black tracking-tighter text-[#1A1C1E]">8am Call</span>
+          <span className="text-2xl font-black tracking-tighter">8am Call</span>
         </div>
-        <button onClick={() => setView('login')} className="bg-[#F1F4F9] px-7 py-3 rounded-full font-bold text-sm hover:bg-[#E2E8F0] transition">
-          Clinic Login
-        </button>
+        <button onClick={() => setView('dashboard')} className="bg-[#F1F4F9] px-7 py-3 rounded-full font-bold text-sm">Clinic Login</button>
       </nav>
 
       <header className="max-w-7xl mx-auto px-8 pt-16 pb-32 text-center">
-        <div className="inline-flex items-center gap-2 bg-blue-50 text-[#0052FF] px-5 py-2 rounded-full text-[13px] font-bold mb-10 border border-blue-100 shadow-sm">
-          <Star className="w-4 h-4 fill-current" /> NHS-Ready AI Technology
-        </div>
-        <h1 className="text-7xl md:text-[100px] font-black tracking-tight leading-[0.85] mb-10 max-w-5xl mx-auto">
-          The <span className="text-[#0052FF]">8am Call</span> Solution.
+        <h1 className="text-7xl md:text-[100px] font-black tracking-tight leading-[0.85] mb-10">
+          End the <span className="text-[#0052FF]">8am Scramble</span>.
         </h1>
         <p className="text-2xl text-slate-500 mb-14 leading-relaxed max-w-2xl mx-auto font-medium">
-          Autonomous Voice AI that handles your surgery's busiest hour. No hold times, no busy signals.
+          The UK's first Autonomous Voice AI for GP surgeries. Handle every call instantly.
         </p>
-        <button onClick={() => setView('login')} className="bg-[#0052FF] text-white px-12 py-6 rounded-[24px] text-xl font-bold shadow-2xl shadow-blue-300 hover:bg-[#0041CC] hover:-translate-y-1 transition-all flex items-center justify-center mx-auto gap-3">
-          Join the Pilot <ArrowRight className="w-6 h-6" />
+        <button 
+          onClick={() => setView('dashboard')}
+          className="bg-[#0052FF] text-white px-12 py-6 rounded-[24px] text-xl font-bold shadow-2xl shadow-blue-300 hover:-translate-y-1 transition-all flex items-center justify-center mx-auto gap-3"
+        >
+          Live Demo Call <ArrowRight className="w-6 h-6" />
         </button>
-
-        {/* Cinematic Video Section */}
-        <div className="mt-24 relative max-w-5xl mx-auto aspect-video bg-slate-900 rounded-[48px] overflow-hidden shadow-2xl border-[8px] border-white group cursor-pointer">
-           <img src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&q=80&w=2070" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700" alt="Demo" />
-           <div className="absolute inset-0 flex items-center justify-center">
-             <div className="w-20 h-20 bg-white/10 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/20">
-               <Play className="text-white w-8 h-8 fill-current" />
-             </div>
-           </div>
-        </div>
       </header>
     </div>
   );
 
-  const LoginPage = () => (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6">
-      <div className="max-w-md w-full bg-white p-12 rounded-[40px] shadow-2xl border border-slate-100">
-        <div className="text-center mb-10">
-          <div className="bg-[#0052FF] w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-100">
-            <Phone className="text-white w-8 h-8" />
-          </div>
-          <h2 className="text-3xl font-black tracking-tight mb-2">Welcome to 8am Call</h2>
-          <p className="text-slate-500 font-medium leading-snug">Enter your work email to access your surgery dashboard.</p>
-        </div>
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div className="relative">
-            <Mail className="absolute left-4 top-4 text-slate-300 w-5 h-5" />
-            <input 
-              type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="manager@surgery.nhs.uk"
-              className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none font-medium"
-            />
-          </div>
-          <button type="submit" disabled={loading} className="w-full bg-[#0052FF] text-white py-5 rounded-2xl font-black shadow-xl shadow-blue-100 hover:bg-[#0041CC] transition active:scale-[0.98]">
-            {loading ? "Sending Magic Link..." : "Sign In / Join Pilot"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-
-  const GPDashboard = () => (
-    <div className="min-h-screen bg-[#F1F5F9] flex font-sans">
+  const Dashboard = () => (
+    <div className="min-h-screen bg-[#F1F5F9] flex font-sans relative">
       <aside className="w-80 bg-white border-r border-slate-200 p-10 flex flex-col">
         <div className="flex items-center gap-3 mb-16 cursor-pointer" onClick={() => setView('landing')}>
           <div className="bg-[#0052FF] p-2 rounded-xl"><Phone className="text-white w-5 h-5" /></div>
           <span className="text-2xl font-black tracking-tighter">8am Call</span>
         </div>
-        <nav className="space-y-3 flex-1">
-          <div className="p-4 bg-blue-50 text-[#0052FF] rounded-2xl font-bold flex items-center gap-4"><Clock className="w-5 h-5" /> Live Patient Queue</div>
-        </nav>
-        <button onClick={() => setView('landing')} className="text-slate-400 font-bold text-sm text-left">Logout</button>
+        <div className="p-4 bg-blue-50 text-[#0052FF] rounded-2xl font-bold flex items-center gap-4">
+          <Clock className="w-5 h-5" /> Live Patient Queue
+        </div>
       </aside>
 
       <main className="flex-1 p-16">
-        <div className="bg-gradient-to-r from-[#0052FF] to-[#4080FF] p-10 rounded-[40px] shadow-2xl shadow-blue-200 mb-12 text-white flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="max-w-md">
-            <h3 className="text-3xl font-black mb-3">Test the Voice AI Now</h3>
-            <p className="text-blue-100 font-medium leading-snug">Enter your number and Sarah will call you instantly to demonstrate her capabilities.</p>
-          </div>
-          <div className="flex gap-3 w-full md:w-auto">
-            <input 
-              type="tel" placeholder="+44 7123 456789" value={demoPhone} onChange={(e) => setDemoPhone(e.target.value)}
-              className="bg-white/10 border-2 border-white/20 px-6 py-4 rounded-2xl focus:bg-white/20 outline-none placeholder:text-blue-200 font-bold w-full md:w-64"
-            />
-            <button onClick={handleCallMe} disabled={calling} className="bg-white text-[#0052FF] px-8 py-4 rounded-2xl font-black hover:bg-blue-50 transition active:scale-95">
-              {calling ? "Calling..." : "Call My Surgery"}
-            </button>
-          </div>
+        {/* Instant Web-Call Trigger */}
+        <div className="bg-white p-12 rounded-[48px] shadow-xl border-4 border-blue-500 mb-12 text-center relative overflow-hidden">
+           <div className="relative z-10">
+              <h3 className="text-4xl font-black mb-4 tracking-tight">Speak to Sarah Now</h3>
+              <p className="text-slate-500 font-medium mb-10 max-w-md mx-auto leading-snug text-lg">
+                Click below to start a live conversation. Watch the dashboard fill with clinical notes in real-time as you speak.
+              </p>
+              <button 
+                onClick={isCalling ? () => vapi.stop() : startWebCall}
+                className={`${isCalling ? 'bg-red-500 shadow-red-100' : 'bg-[#0052FF] shadow-blue-100'} text-white px-12 py-6 rounded-3xl text-2xl font-black shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-4 mx-auto`}
+              >
+                {isCalling ? <><X className="w-8 h-8" /> End Call</> : <><Phone className="w-8 h-8" /> Call My Surgery</>}
+              </button>
+           </div>
+           {isCalling && <div className="absolute inset-0 bg-blue-50/50 animate-pulse"></div>}
         </div>
 
-        <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden">
+        {/* Real-Time Table */}
+        <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden min-h-[400px]">
           <table className="w-full text-left">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="bg-slate-50 border-b border-slate-200 uppercase text-[10px] font-black tracking-widest text-slate-400">
               <tr>
-                <th className="p-10 font-black text-xs uppercase text-slate-400">Patient</th>
-                <th className="p-10 font-black text-xs uppercase text-slate-400">Priority</th>
-                <th className="p-10 font-black text-xs uppercase text-slate-400">AI Summary</th>
-                <th className="p-10 font-black text-xs uppercase text-slate-400">Status</th>
+                <th className="p-10">Patient Details</th>
+                <th className="p-10">Priority</th>
+                <th className="p-10">Live Clinical Notes (AI)</th>
+                <th className="p-10">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {appointments.map(app => (
-                <tr key={app.id}>
-                  <td className="p-10 font-bold text-slate-900">{app.patient_name}</td>
+              {appointments.length === 0 && !isCalling ? (
+                <tr><td colSpan={4} className="p-32 text-center text-slate-300 font-bold">Waiting for first call...</td></tr>
+              ) : appointments.map((app) => (
+                <tr key={app.id} className="animate-in fade-in slide-in-from-top-4 duration-500">
                   <td className="p-10">
-                    <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase ${app.urgency === 'Red' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                      {app.urgency}
-                    </span>
+                    <p className="font-black text-xl text-slate-900">{app.patient_name || "Capturing Name..."}</p>
+                    <p className="text-sm font-bold text-slate-400 italic">{app.dob || "Waiting for DOB..."}</p>
                   </td>
-                  <td className="p-10 text-slate-500 italic">"{app.symptoms}"</td>
-                  <td className="p-10 font-black text-xs text-[#0052FF] uppercase">{app.status}</td>
+                  <td className="p-10">
+                    {app.urgency && (
+                      <span className={`px-4 py-1.5 rounded-full text-[10px] font-black border ${
+                        app.urgency === 'Red' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                      }`}>
+                        {app.urgency.toUpperCase()}
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-10 text-slate-500 font-medium italic max-w-md">
+                    {app.symptoms || "AI is listening and generating notes..."}
+                  </td>
+                  <td className="p-10 font-black text-xs text-[#0052FF]">{app.status}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </main>
+
+      {/* Exit Popup */}
+      {showExitPopup && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-6 z-50">
+          <div className="bg-white max-w-xl w-full p-12 rounded-[48px] shadow-2xl text-center">
+            <div className="bg-green-100 text-green-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-8">
+              <CheckCircle className="w-10 h-10" />
+            </div>
+            <h2 className="text-4xl font-black mb-4">Pretty impressive, right?</h2>
+            <p className="text-slate-500 font-medium mb-10 text-lg leading-relaxed">
+              We can set this up for your real clinic in under 2 minutes. Just divert your busy lines to our secure UK number.
+            </p>
+            <div className="space-y-4">
+              <input 
+                type="email" 
+                placeholder="Your work email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-8 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl font-bold focus:border-blue-500 outline-none text-center text-xl"
+              />
+              <button className="w-full bg-[#0052FF] text-white py-6 rounded-3xl font-black text-xl shadow-xl shadow-blue-100 hover:bg-blue-700">
+                Send My Clean Dashboard Link
+              </button>
+              <button onClick={() => setShowExitPopup(false)} className="text-slate-400 font-bold text-sm underline">Close and keep testing</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
-  if (view === 'landing') return <LandingPage />;
-  if (view === 'login') return <LoginPage />;
-  return <GPDashboard />;
+  return view === 'landing' ? <LandingPage /> : <Dashboard />;
 }
